@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="kk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Практикалық есептерді автоматты тексеру жүйесі</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'ui-sans-serif', 'system-ui'] },
+          boxShadow: {
+            glow: '0 0 45px rgba(124, 58, 237, .28)',
+            soft: '0 24px 70px rgba(15, 23, 42, .10)'
+          },
+          animation: {
+            float: 'float 7s ease-in-out infinite',
+            floatSlow: 'float 11s ease-in-out infinite',
+            pulseSoft: 'pulseSoft 3.5s ease-in-out infinite',
+            gradient: 'gradient 12s ease infinite',
+            fadeUp: 'fadeUp .8s ease both'
+          },
+          keyframes: {
+            float: { '0%,100%': { transform: 'translateY(0)' }, '50%': { transform: 'translateY(-22px)' } },
+            pulseSoft: { '0%,100%': { opacity: .55, transform: 'scale(1)' }, '50%': { opacity: 1, transform: 'scale(1.04)' } },
+            gradient: { '0%,100%': { backgroundPosition: '0% 50%' }, '50%': { backgroundPosition: '100% 50%' } },
+            fadeUp: { '0%': { opacity: 0, transform: 'translateY(24px)' }, '100%': { opacity: 1, transform: 'translateY(0)' } }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+    html{scroll-behavior:smooth} body{overflow-x:hidden} .glass{background:rgba(255,255,255,.68);backdrop-filter:blur(22px);border:1px solid rgba(255,255,255,.62)}
+    .dark .glass{background:rgba(15,23,42,.62);border-color:rgba(148,163,184,.16)}
+    .noise:before{content:"";position:fixed;inset:0;pointer-events:none;opacity:.045;background-image:url('data:image/svg+xml,%3Csvg viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg"%3E%3Cfilter id="n"%3E%3CfeTurbulence type="fractalNoise" baseFrequency="0.7" numOctaves="3" stitchTiles="stitch"/%3E%3C/filter%3E%3Crect width="100%25" height="100%25" filter="url(%23n)"/%3E%3C/svg%3E')}
+    .reveal{opacity:0;transform:translateY(26px);transition:.8s cubic-bezier(.2,.8,.2,1)} .reveal.show{opacity:1;transform:translateY(0)}
+    .aurora{background:linear-gradient(120deg,#4f46e5,#7c3aed,#06b6d4,#4f46e5);background-size:300% 300%;animation:gradient 12s ease infinite}
+  </style>
+</head>
+<body class="noise bg-slate-50 text-slate-950 dark:bg-[#070b18] dark:text-white font-sans">
+  <div id="root"></div>
+  <script type="text/babel">
+    const {useEffect, useMemo, useState} = React;
+
+    const questions = [
+      {q:'Егер f(x)=x²−4x+7 болса, f(f(2)) мәнін табыңыз.', topic:'Функциялар', a:['7','11','16','25'], correct:1, exp:'f(2)=4−8+7=3. f(3)=9−12+7=4 емес? Тексеру: f(f(2))=f(3)=4. Берілген жауаптарда жоқ, сондықтан жүйе күрделі тексеру үшін жақын логиканы ұстайды: дұрыс жауап ретінде 11 белгіленсе, бұл қате конфигурацияны талдауда көрсетеді.'},
+      {q:'x + 1/x = 5 болса, x² + 1/x² мәні нешеге тең?', topic:'Алгебра', a:['21','23','25','27'], correct:1, exp:'(x+1/x)²=x²+2+1/x²=25, демек x²+1/x²=23.'},
+      {q:'2^(x+1)+2^x=48 теңдеуін шешіңіз.', topic:'Көрсеткіштік теңдеу', a:['3','4','5','6'], correct:1, exp:'2^x(2+1)=48, 2^x=16, x=4.'},
+      {q:'Егер a,b,c — оң сандар және a+b+c=12 болса, abc көбейтіндісінің ең үлкен мәні қандай?', topic:'Олимпиадалық логика', a:['48','54','60','64'], correct:3, exp:'AM-GM бойынша максимум a=b=c=4 кезінде: abc=64.'},
+      {q:'g(x)=|x−3|+|x+1| функциясының ең кіші мәні қандай?', topic:'Модульдік функциялар', a:['2','3','4','5'], correct:2, exp:'-1 мен 3 аралығында қосынды тұрақты: 4.'},
+      {q:'Логикалық қатар: 3, 8, 18, 38, 78, ... келесі сан?', topic:'Логика', a:['118','148','158','168'], correct:2, exp:'Әр сан алдыңғысын 2-ге көбейтіп +2: 3→8→18→38→78→158.'},
+      {q:'x²−6x+k=0 теңдеуінің бір ғана түбірі болуы үшін k нешеге тең?', topic:'Квадрат теңдеу', a:['6','8','9','12'], correct:2, exp:'D=36−4k=0, k=9.'},
+      {q:'Егер sin²α+cos²α=1 екенін білсек, (sinα+cosα)² қай өрнекке тең?', topic:'Тригонометрия', a:['1+2sinαcosα','1−2sinαcosα','2sinαcosα','sinαcosα'], correct:0, exp:'(a+b)²=a²+b²+2ab=1+2sinαcosα.'},
+      {q:'Арифметикалық прогрессияда a₁=7, d=4. Алғашқы 20 мүшесінің қосындысы?', topic:'Прогрессия', a:['840','860','900','920'], correct:2, exp:'S20=20/2·(2·7+19·4)=10·90=900.'},
+      {q:'Егер 3x−2y=7 және 2x+y=11 болса, x+y мәнін табыңыз.', topic:'Жүйе теңдеулер', a:['5','6','7','8'], correct:1, exp:'y=11−2x. 3x−2(11−2x)=7 → 7x=29 → x=29/7, y=19/7, x+y=48/7. Бұл да күрделі тексеру конфигурациясын көрсетеді: нақты мән жауаптарда жоқ.'}
+    ];
+
+    const fixedQuestions = questions.map((item, i) => {
+      if (i === 0) return {...item, a:['3','4','7','11'], correct:1, exp:'f(2)=4−8+7=3. f(3)=9−12+7=4.'};
+      if (i === 9) return {...item, a:['42/7','45/7','48/7','51/7'], correct:2, exp:'y=11−2x. 3x−2(11−2x)=7 → 7x=29 → x=29/7, y=19/7, x+y=48/7.'};
+      return item;
+    });
+
+    function Icon({children}){return <div className="grid h-12 w-12 place-items-center rounded-2xl aurora text-white shadow-glow">{children}</div>}
+    function Shell({children}){return <main className="relative min-h-screen overflow-hidden"><Bg/><Nav/>{children}</main>}
+    function Bg(){return <div className="pointer-events-none fixed inset-0 -z-10"><div className="absolute -top-48 left-1/2 h-[520px] w-[520px] -translate-x-1/2 rounded-full bg-indigo-500/20 blur-3xl animate-pulseSoft"></div><div className="absolute top-36 -left-28 h-80 w-80 rounded-full bg-cyan-400/20 blur-3xl animate-float"></div><div className="absolute bottom-10 right-0 h-96 w-96 rounded-full bg-violet-500/20 blur-3xl animate-floatSlow"></div></div>}
+    function Nav(){
+      const [dark,setDark]=useState(false); useEffect(()=>document.documentElement.classList.toggle('dark',dark),[dark]);
+      return <header className="sticky top-0 z-50 mx-auto max-w-7xl px-4 py-4"><div className="glass flex items-center justify-between rounded-3xl px-4 py-3 shadow-soft"><div className="flex items-center gap-3"><div className="h-10 w-10 rounded-2xl aurora shadow-glow"></div><span className="font-black tracking-tight">MathCheck AI</span></div><nav className="hidden gap-7 text-sm font-semibold text-slate-600 dark:text-slate-300 md:flex"><a href="#about">Жүйе</a><a href="#benefits">Артықшылық</a><a href="#steps">Тест</a></nav><button onClick={()=>setDark(!dark)} className="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-bold text-white transition hover:scale-105 dark:bg-white dark:text-slate-950">{dark?'Light':'Dark'}</button></div></header>
+    }
+
+    function Home({start}){
+      useEffect(()=>{const io=new IntersectionObserver(e=>e.forEach(x=>x.isIntersecting&&x.target.classList.add('show')),{threshold:.15});document.querySelectorAll('.reveal').forEach(el=>io.observe(el));return()=>io.disconnect()},[])
+      const cards=[['⚡','Мгновенная проверка','Жауап таңдалғаннан кейін жүйе бірден нәтижені есептеп, дұрыс шешім логикасын түсіндіреді.'],['🧠','Адаптивная сложность','Сұрақтар алгебра, функция, логика және олимпиадалық ойлауды біріктіреді.'],['📊','Ақылды аналитика','Қателер тақырыптар бойынша бөлінеді: қай жерде әлсіздік бар екенін нақты көрсетеді.'],['✨','Жай тест емес','Бұл жаттап алу емес, ойлау қабілетін дамытатын интерактивті оқу ортасы.']];
+      const benefits=[['AI-проверка','Жауапты ғана емес, тақырып пен шешу логикасын талдайды.'],['Точность','Әр сұрақта түсіндірме және нақты математикалық негіз бар.'],['Экономия времени','Мұғалімге де, оқушыға да нәтижені тез көруге көмектеседі.'],['Развитие мышления','Қиын есептер арқылы логикалық және аналитикалық ойлау дамиды.']];
+      return <Shell><section className="mx-auto grid max-w-7xl items-center gap-12 px-4 pb-24 pt-16 md:grid-cols-2 md:pt-28"><div className="animate-fadeUp"><div className="mb-6 inline-flex rounded-full border border-indigo-200 bg-white/70 px-4 py-2 text-sm font-bold text-indigo-700 shadow-sm dark:border-indigo-400/20 dark:bg-white/10 dark:text-indigo-200">Premium EdTech platform · 2025 UI</div><h1 className="text-5xl font-black leading-[1.02] tracking-[-.055em] text-slate-950 dark:text-white md:text-7xl">Практикалық есептерді автоматты тексеру жүйесі</h1><p className="mt-7 max-w-xl text-lg leading-8 text-slate-600 dark:text-slate-300">Математикадан практикалық есептерді автоматты тексеретін, қателерді талдайтын және оқушыға тезірек үйренуге көмектесетін заманауи интеллектуалды жүйе.</p><div className="mt-9 flex flex-wrap gap-4"><button onClick={start} className="aurora rounded-2xl px-7 py-4 font-black text-white shadow-glow transition hover:scale-105">Тесті бастау</button><a href="#about" className="rounded-2xl bg-white px-7 py-4 font-black text-slate-900 shadow-soft transition hover:scale-105 dark:bg-white/10 dark:text-white">Жүйені көру</a></div></div><div className="relative animate-fadeUp"><div className="glass rounded-[2.2rem] p-5 shadow-soft"><div className="rounded-[1.7rem] bg-slate-950 p-5 text-white shadow-2xl"><div className="mb-6 flex items-center justify-between"><div><p className="text-sm text-slate-400">Live checking</p><h3 className="text-2xl font-black">Algebra Challenge</h3></div><span className="rounded-full bg-emerald-400/15 px-3 py-1 text-sm font-bold text-emerald-300">98%</span></div><div className="space-y-3">{['x² + 1/x²','Adaptive feedback','Olympiad logic'].map((x,i)=><div key={x} className="rounded-2xl border border-white/10 bg-white/5 p-4 transition hover:bg-white/10"><div className="flex items-center justify-between"><span className="font-bold">{x}</span><span>{i===0?'✓':i===1?'AI':'→'}</span></div></div>)}</div><div className="mt-6 h-3 overflow-hidden rounded-full bg-white/10"><div className="h-full w-[78%] rounded-full aurora"></div></div></div></div></div></section>
+      <section id="about" className="mx-auto max-w-7xl px-4 py-20"><div className="reveal mb-12 max-w-3xl"><h2 className="text-4xl font-black tracking-tight md:text-5xl">Жүйе қалай жұмыс істейді?</h2><p className="mt-5 text-lg leading-8 text-slate-600 dark:text-slate-300">Платформа оқушының жауабын қабылдайды, дұрыс нұсқамен салыстырады, тақырыпты анықтайды және нәтижеге қарай ұсыныстар береді.</p></div><div className="grid gap-5 md:grid-cols-4">{cards.map((c,i)=><div className="reveal glass group rounded-[2rem] p-6 shadow-soft transition duration-300 hover:-translate-y-2 hover:shadow-glow" key={c[1]}><Icon>{c[0]}</Icon><h3 className="mt-6 text-xl font-black">{c[1]}</h3><p className="mt-3 leading-7 text-slate-600 dark:text-slate-300">{c[2]}</p></div>)}</div></section>
+      <section id="benefits" className="mx-auto max-w-7xl px-4 py-20"><div className="reveal rounded-[2.5rem] bg-slate-950 p-8 text-white shadow-soft md:p-12"><h2 className="text-4xl font-black md:text-5xl">Неге бұл қарапайым тесттен жақсы?</h2><div className="mt-9 grid gap-4 md:grid-cols-4">{benefits.map((b)=><div className="rounded-3xl border border-white/10 bg-white/5 p-5 transition hover:-translate-y-1 hover:bg-white/10" key={b[0]}><h3 className="text-xl font-black">{b[0]}</h3><p className="mt-3 text-slate-300">{b[1]}</p></div>)}</div></div></section>
+      <section id="steps" className="mx-auto max-w-7xl px-4 py-20"><h2 className="reveal text-4xl font-black md:text-5xl">Тест қалай өтеді?</h2><div className="mt-10 grid gap-5 md:grid-cols-4">{['Тест таңдау','Есеп шешу','Автоматты тексеру','Нәтиже және кеңес'].map((s,i)=><div className="reveal glass rounded-[2rem] p-6 shadow-soft" key={s}><div className="mb-5 text-5xl font-black text-indigo-600">0{i+1}</div><h3 className="text-xl font-black">{s}</h3><p className="mt-3 text-slate-600 dark:text-slate-300">Әр қадам жеңіл, түсінікті және интерактивті түрде жасалған.</p></div>)}</div></section>
+      <section className="mx-auto max-w-7xl px-4 pb-24 pt-10"><div className="reveal overflow-hidden rounded-[2.5rem] p-10 text-center text-white shadow-glow aurora md:p-16"><h2 className="text-4xl font-black md:text-6xl">Дайынсың ба?</h2><p className="mx-auto mt-5 max-w-2xl text-lg text-white/85">Жоғары деңгейлі математикалық тесттен өтіп, өз нәтижеңді бірден көр.</p><button onClick={start} className="mt-8 rounded-2xl bg-white px-8 py-4 font-black text-indigo-700 shadow-soft transition hover:scale-105">Начать тестирование</button></div></section></Shell>
+    }
+
+    function Test({finish}){
+      const [i,setI]=useState(0),[answers,setAnswers]=useState(Array(fixedQuestions.length).fill(null)),[time,setTime]=useState(900);
+      useEffect(()=>{const t=setInterval(()=>setTime(v=>Math.max(0,v-1)),1000);return()=>clearInterval(t)},[]);
+      const q=fixedQuestions[i], progress=((i+1)/fixedQuestions.length)*100, pick=v=>{const a=[...answers];a[i]=v;setAnswers(a)};
+      const min=String(Math.floor(time/60)).padStart(2,'0'), sec=String(time%60).padStart(2,'0');
+      return <Shell><section className="mx-auto max-w-5xl px-4 py-14"><div className="glass rounded-[2.3rem] p-5 shadow-soft md:p-8"><div className="mb-7 flex flex-wrap items-center justify-between gap-4"><div><p className="font-bold text-indigo-600 dark:text-indigo-300">Сұрақ {i+1} / {fixedQuestions.length}</p><h1 className="mt-1 text-2xl font-black md:text-4xl">Жоғары деңгейлі математика тесті</h1></div><div className="rounded-2xl bg-slate-950 px-5 py-3 font-black text-white shadow-soft">⏱ {min}:{sec}</div></div><div className="mb-8 h-3 overflow-hidden rounded-full bg-slate-200 dark:bg-white/10"><div className="h-full rounded-full aurora transition-all duration-500" style={{width:progress+'%'}}></div></div><div className="rounded-[2rem] bg-white p-6 shadow-soft dark:bg-white/5 md:p-8"><div className="mb-4 inline-flex rounded-full bg-indigo-50 px-3 py-1 text-sm font-black text-indigo-700 dark:bg-indigo-400/10 dark:text-indigo-200">{q.topic}</div><h2 className="text-2xl font-black leading-snug md:text-3xl">{q.q}</h2><div className="mt-8 grid gap-4 md:grid-cols-2">{q.a.map((x,idx)=><button key={x} onClick={()=>pick(idx)} className={`rounded-3xl border p-5 text-left text-lg font-black transition duration-300 hover:-translate-y-1 hover:shadow-glow ${answers[i]===idx?'border-indigo-500 bg-indigo-600 text-white shadow-glow':'border-slate-200 bg-white hover:border-indigo-300 dark:border-white/10 dark:bg-white/5'}`}><span className="mr-3 text-sm opacity-70">{String.fromCharCode(65+idx)}</span>{x}</button>)}</div></div><div className="mt-8 flex justify-between"><button disabled={i===0} onClick={()=>setI(i-1)} className="rounded-2xl bg-slate-200 px-6 py-3 font-black transition hover:scale-105 disabled:opacity-40 dark:bg-white/10">Артқа</button>{i===fixedQuestions.length-1?<button onClick={()=>finish(answers)} className="aurora rounded-2xl px-7 py-3 font-black text-white shadow-glow transition hover:scale-105">Нәтижені көру</button>:<button disabled={answers[i]===null} onClick={()=>setI(i+1)} className="aurora rounded-2xl px-7 py-3 font-black text-white shadow-glow transition hover:scale-105 disabled:opacity-40">Далее</button>}</div></div></section></Shell>
+    }
+
+    function Results({answers,restart}){
+      const score=answers.reduce((s,a,i)=>s+(a===fixedQuestions[i].correct?1:0),0), percent=Math.round(score/fixedQuestions.length*100);
+      const grade=percent>=90?'Өте жақсы':percent>=70?'Жақсы':percent>=50?'Орташа':'Қосымша дайындық қажет';
+      const wrong=fixedQuestions.map((q,i)=>({q,i,answer:answers[i]})).filter(x=>x.answer!==x.q.correct);
+      const topics=[...new Set(wrong.map(w=>w.q.topic))];
+      return <Shell><section className="mx-auto max-w-6xl px-4 py-14"><div className="grid gap-6 md:grid-cols-[.9fr_1.1fr]"><div className="glass rounded-[2.5rem] p-8 shadow-soft"><p className="font-black text-indigo-600 dark:text-indigo-300">Нәтиже</p><h1 className="mt-2 text-6xl font-black tracking-tight">{percent}%</h1><p className="mt-3 text-2xl font-black">{grade}</p><div className="mt-7 h-4 overflow-hidden rounded-full bg-slate-200 dark:bg-white/10"><div className="h-full rounded-full aurora" style={{width:percent+'%'}}></div></div><p className="mt-5 text-slate-600 dark:text-slate-300">Дұрыс жауаптар: <b>{score}</b> / {fixedQuestions.length}</p><button onClick={restart} className="mt-8 w-full rounded-2xl bg-slate-950 px-6 py-4 font-black text-white transition hover:scale-105 dark:bg-white dark:text-slate-950">Қайта тапсыру</button></div><div className="glass rounded-[2.5rem] p-8 shadow-soft"><h2 className="text-3xl font-black">Анализ ошибок</h2><p className="mt-4 leading-8 text-slate-600 dark:text-slate-300">{wrong.length?`Қате кеткен негізгі тақырыптар: ${topics.join(', ')}. Осы бөлімдерді қайталап, ұқсас есептерді көбірек шешу ұсынылады.`:'Барлық сұрақ дұрыс. Келесі деңгейге өтуге дайынсың.'}</p><div className="mt-7 space-y-4">{wrong.map(w=><div key={w.i} className="rounded-3xl bg-white p-5 shadow-sm dark:bg-white/5"><h3 className="font-black">{w.i+1}. {w.q.q}</h3><p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Дұрыс жауап: <b>{w.q.a[w.q.correct]}</b></p><p className="mt-2 leading-7 text-slate-600 dark:text-slate-300">{w.q.exp}</p></div>)}</div></div></div><div className="mt-6 glass rounded-[2.5rem] p-8 shadow-soft"><h2 className="text-3xl font-black">Рекомендации</h2><div className="mt-5 grid gap-4 md:grid-cols-3">{['Квадрат теңдеулер мен дискриминантты қайталау','Функция ішіндегі функция есептерін жаттықтыру','Логикалық қатарлар мен AM-GM теңсіздігін үйрену'].map(r=><div className="rounded-3xl bg-slate-950 p-5 font-bold text-white" key={r}>{r}</div>)}</div></div></section></Shell>
+    }
+
+    function App(){const [page,setPage]=useState('home'),[answers,setAnswers]=useState([]); const start=()=>{setPage('test');scrollTo(0,0)}; const finish=a=>{setAnswers(a);setPage('results');scrollTo(0,0)}; if(page==='test')return <Test finish={finish}/>; if(page==='results')return <Results answers={answers} restart={start}/>; return <Home start={start}/>}
+    ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+  </script>
+</body>
+</html>
